@@ -8,11 +8,12 @@ type AppConfig struct {
 
 // Profile represents a specific configuration set.
 type Profile struct {
-	Provider      string    `json:"provider"`            // "aws", "gcp", etc.
-	PulumiBackend string    `json:"pulumi_backend"`      // "file://~/.privatebox/state" or s3/url
-	Region        string    `json:"region"`              // Global default region
-	SSHPublicKey  string    `json:"ssh_public_key_path"` // Path to public key for instances
-	AWS           AWSConfig `json:"aws,omitempty"`       // AWS specific config
+	Provider       string    `json:"provider"`            // "aws", "gcp", etc.
+	PulumiBackend  string    `json:"pulumi_backend"`      // "file://~/.privatebox/state" or s3/url
+	Region         string    `json:"region"`              // Global default region
+	SSHPublicKey   string    `json:"ssh_public_key_path"` // Path to public key for instances
+	ConnectCommand string    `json:"connect_command"`     // Command template to connect (e.g. "ssh {user}@{ip}", "mosh ...")
+	AWS            AWSConfig `json:"aws,omitempty"`       // AWS specific config
 }
 
 // AWSConfig holds AWS-specific settings.
@@ -25,9 +26,10 @@ type AWSConfig struct {
 // DefaultProfile returns a profile with sensible defaults.
 func DefaultProfile() Profile {
 	return Profile{
-		Provider:      "aws",
-		PulumiBackend: "file://~/.privatebox/state",
-		Region:        "us-east-1",
+		Provider:       "aws",
+		PulumiBackend:  "file://~/.privatebox/state",
+		Region:         "us-east-1",
+		ConnectCommand: "ssh -i {key} {user}@{ip}",
 		AWS: AWSConfig{
 			InstanceType: "t3.micro",
 		},

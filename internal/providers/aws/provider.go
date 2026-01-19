@@ -16,6 +16,7 @@ import (
 
 	// Pulumi AWS
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
+	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -63,6 +64,43 @@ func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFu
 			Tags: pulumi.StringMap{
 				"Name": pulumi.String(spec.Name + "-sg"),
 			},
+		})
+		if err != nil {
+			return err
+		}
+
+		// 1.5 Create IAM Role for SSM Support
+		// We create a role that allows EC2 to assume it, and attach the SSM Core policy.
+		role, err := iam.NewRole(ctx, spec.Name+"-role", &iam.RoleArgs{
+			AssumeRolePolicy: pulumi.String(`{
+				"Version": "2012-10-17",
+				"Statement": [{
+					"Action": "sts:AssumeRole",
+					"Principal": {
+						"Service": "ec2.amazonaws.com"
+					},
+					"Effect": "Allow",
+					"Sid": ""
+				}]
+			}`),
+			Tags: pulumi.StringMap{
+				"Name": pulumi.String(spec.Name + "-role"),
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = iam.NewRolePolicyAttachment(ctx, spec.Name+"-rpa", &iam.RolePolicyAttachmentArgs{
+			Role:      role.Name,
+			PolicyArn: pulumi.String("arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"),
+		})
+		if err != nil {
+			return err
+		}
+
+		instanceProfile, err := iam.NewInstanceProfile(ctx, spec.Name+"-profile", &iam.InstanceProfileArgs{
+			Role: role.Name,
 		})
 		if err != nil {
 			return err
@@ -125,15 +163,24 @@ func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFu
 			instanceType = "t3.micro"
 		}
 
+		// Prepare tags
+		pulumiTags := pulumi.StringMap{}
+		pulumiTags["Name"] = pulumi.String(spec.Name)
+		if spec.UserDataName != "" {
+			pulumiTags["UserDataName"] = pulumi.String(spec.UserDataName)
+		}
+		for k, v := range spec.Tags {
+			pulumiTags[k] = pulumi.String(v)
+		}
+
 		srv, err := ec2.NewInstance(ctx, spec.Name, &ec2.InstanceArgs{
 			InstanceType:        pulumi.String(instanceType),
 			VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 			Ami:                 pulumi.String(amiID),
 			KeyName:             keyName,
 			UserData:            pulumi.String(spec.UserData),
-			Tags: pulumi.StringMap{
-				"Name": pulumi.String(spec.Name),
-			},
+			Tags:                pulumiTags,
+			IamInstanceProfile:  instanceProfile.Name,
 		})
 		if err != nil {
 			return err
@@ -143,6 +190,11 @@ func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFu
 		ctx.Export("instanceID", srv.ID())
 		ctx.Export("publicIP", srv.PublicIp)
 		ctx.Export("publicDNS", srv.PublicDns)
+		if v, ok := pulumiTags["UserDataName"]; ok {
+			ctx.Export("userDataName", v)
+		} else {
+			ctx.Export("userDataName", pulumi.String(""))
+		}
 		return nil
 
 	}

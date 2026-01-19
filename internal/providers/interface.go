@@ -8,10 +8,11 @@ import (
 
 // InstanceSpec defines the desired state of an instance.
 type InstanceSpec struct {
-	Name     string
-	Type     string            // e.g. "t3.micro"
-	UserData string            // Cloud-init script or similar
-	Tags     map[string]string // Resource tags
+	Name         string
+	Type         string            // e.g. "t3.micro"
+	UserData     string            // Cloud-init script or similar
+	UserDataName string            // Name of the managed userdata script (optional)
+	Tags         map[string]string // Resource tags
 }
 
 // RuntimeInfo contains status data fetched from the cloud provider.

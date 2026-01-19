@@ -9,7 +9,10 @@ import (
 	"privatebox/internal/orchestration"
 	"privatebox/internal/providers"
 	"privatebox/internal/providers/aws"
+	"privatebox/internal/userdata"
+	"strings"
 
+	"github.com/manifoldco/promptui"
 	"github.com/urfave/cli/v3"
 )
 
@@ -47,22 +50,22 @@ func GetRootCommands() []*cli.Command {
 		{
 			Name:      "connect",
 			Usage:     "Connect (SSH) to an instance",
-			ArgsUsage: "<name>",
+			ArgsUsage: "[name]",
 			Flags:     []cli.Flag{profileFlag},
 			Action:    connectInstance,
 		},
 	}
 }
 
-func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.StackManager, *config.Profile, providers.CloudProvider, error) {
+func loadProfile(cmd *cli.Command) (*config.Profile, error) {
 	loader, err := config.NewLoader()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	appCfg, err := loader.Load()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 
 	// Determine profile
@@ -76,20 +79,28 @@ func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.Stac
 
 	profile, ok := appCfg.Profiles[profileName]
 	if !ok {
-		return nil, nil, nil, fmt.Errorf("profile '%s' not found", profileName)
+		return nil, fmt.Errorf("profile '%s' not found", profileName)
+	}
+	return &profile, nil
+}
+
+func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.StackManager, *config.Profile, providers.CloudProvider, error) {
+	profile, err := loadProfile(cmd)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	// Provider Factory (Switch based on cfg.Provider in future)
 	var provider providers.CloudProvider
 	if profile.Provider == "aws" {
-		provider = aws.NewAWSProvider(profile)
+		provider = aws.NewAWSProvider(*profile)
 	} else {
 		return nil, nil, nil, fmt.Errorf("unsupported provider: %s", profile.Provider)
 	}
 
 	// Pass pointer to profile
-	mgr := orchestration.NewStackManager(&profile, provider, instanceName)
-	return mgr, &profile, provider, nil
+	mgr := orchestration.NewStackManager(profile, provider, instanceName)
+	return mgr, profile, provider, nil
 }
 
 func createInstance(ctx context.Context, cmd *cli.Command) error {
@@ -103,14 +114,32 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	userDataPath := cmd.String("user-data")
+	userDataArg := cmd.String("user-data")
 	var userDataContent string
-	if userDataPath != "" {
-		data, err := os.ReadFile(userDataPath)
+	var userDataName string
+
+	if userDataArg != "" {
+		// Check if it's a stored script
+		um, err := userdata.NewManager()
 		if err != nil {
-			return fmt.Errorf("failed to read user-data: %w", err)
+			return err
 		}
-		userDataContent = string(data)
+
+		if um.Exists(userDataArg) {
+			content, err := um.Get(userDataArg)
+			if err != nil {
+				return fmt.Errorf("failed to get userdata script: %w", err)
+			}
+			userDataContent = string(content)
+			userDataName = userDataArg
+		} else {
+			// Assume file path
+			data, err := os.ReadFile(userDataArg)
+			if err != nil {
+				return fmt.Errorf("user-data argument is neither a stored script nor a valid file: %w", err)
+			}
+			userDataContent = string(data)
+		}
 	}
 
 	// Allow override of instance type
@@ -120,9 +149,10 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 	}
 
 	spec := providers.InstanceSpec{
-		Name:     name,
-		Type:     cfg.AWS.InstanceType,
-		UserData: userDataContent,
+		Name:         name,
+		Type:         cfg.AWS.InstanceType,
+		UserData:     userDataContent,
+		UserDataName: userDataName,
 	}
 
 	_, err = mgr.Up(ctx, spec)
@@ -194,7 +224,42 @@ func listInstance(ctx context.Context, cmd *cli.Command) error {
 func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.Args().First()
 	if name == "" {
-		return fmt.Errorf("instance name is required")
+		// No name provided, try to find available instances
+		profile, err := loadProfile(cmd)
+		if err != nil {
+			return err
+		}
+
+		stacks, err := orchestration.ListStacks(profile)
+		if err != nil {
+			return fmt.Errorf("failed to list instances: %w", err)
+		}
+
+		if len(stacks) == 0 {
+			return fmt.Errorf("no instances found")
+		} else if len(stacks) == 1 {
+			name = stacks[0]
+			fmt.Printf("Only one instance found, connecting to '%s'...\n", name)
+		} else {
+			// Interactive selection
+			prompt := promptui.Select{
+				Label: "Select instance to connect to",
+				Items: stacks,
+				Searcher: func(input string, index int) bool {
+					item := stacks[index]
+					name := strings.ToLower(item)
+					input = strings.ToLower(input)
+					return strings.Contains(name, input)
+				},
+				StartInSearchMode: true,
+			}
+
+			_, result, err := prompt.Run()
+			if err != nil {
+				return fmt.Errorf("prompt failed: %w", err)
+			}
+			name = result
+		}
 	}
 
 	mgr, cfg, provider, err := getStackManager(cmd, name)
@@ -212,23 +277,43 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("publicIP output not found, instance might not be ready")
 	}
 
-	user := provider.GetSSHUser()
+	instanceID, _ := outs["instanceID"].Value.(string)
 
-	sshArgs := []string{user + "@" + ip}
+	user := provider.GetSSHUser()
+	host := fmt.Sprintf("%s@%s", user, ip)
+
+	// Determine Private Key Path
+	privKeyPath := ""
 	if cfg.SSHPublicKey != "" {
-		// Use the private key assuming it's the pair of the public key
-		// Usually private key is without .pub
-		// This is a naive assumption for the MVP
-		privKeyPath := cfg.SSHPublicKey
-		// Remove .pub if present
-		// In reality, user should config private key path or use ssh-agent
-		// We'll pass it if it looks like a key path
-		sshArgs = append([]string{"-i", privKeyPath}, sshArgs...)
+		privKeyPath = cfg.SSHPublicKey
+		if strings.HasSuffix(privKeyPath, ".pub") {
+			privKeyPath = strings.TrimSuffix(privKeyPath, ".pub")
+		}
 	}
 
-	fmt.Printf("Connecting to %s (%s)...\n", name, ip)
+	// Determine Command Template
+	cmdTemplate := cfg.ConnectCommand
+	if cmdTemplate == "" {
+		if privKeyPath != "" {
+			cmdTemplate = "ssh -i {key} {host}"
+		} else {
+			cmdTemplate = "ssh {host}"
+		}
+	}
 
-	sshCmd := exec.Command("ssh", sshArgs...)
+	// Replace Variables
+	commandStr := cmdTemplate
+	commandStr = strings.ReplaceAll(commandStr, "{user}", user)
+	commandStr = strings.ReplaceAll(commandStr, "{ip}", ip)
+	commandStr = strings.ReplaceAll(commandStr, "{id}", instanceID)
+	commandStr = strings.ReplaceAll(commandStr, "{key}", privKeyPath)
+	commandStr = strings.ReplaceAll(commandStr, "{host}", host)
+
+	fmt.Printf("Connecting to %s (%s)...\n", name, ip)
+	fmt.Printf("Command: %s\n", commandStr)
+
+	// Use sh -c to allow for complex commands (pipes, etc) and correct argument parsing by shell
+	sshCmd := exec.Command("sh", "-c", commandStr)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
 	sshCmd.Stderr = os.Stderr

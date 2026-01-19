@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"privatebox/internal/config"
 	"privatebox/internal/providers"
 	"strings"
@@ -154,4 +155,58 @@ func (s *StackManager) GetOutputs(ctx context.Context) (auto.OutputMap, error) {
 	}
 
 	return outs, nil
+}
+
+// ListStacks returns all stack names found in the backend (file backend only).
+func ListStacks(cfg *config.Profile) ([]string, error) {
+	backend := cfg.PulumiBackend
+	if strings.HasPrefix(backend, "file://") {
+		path := strings.TrimPrefix(backend, "file://")
+		if strings.HasPrefix(path, "~/") {
+			dirname, _ := os.UserHomeDir()
+			path = filepath.Join(dirname, path[2:])
+		}
+
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return []string{}, nil
+			}
+			return nil, err
+		}
+		var stacks []string
+		for _, e := range entries {
+			if e.IsDir() {
+				stacks = append(stacks, e.Name())
+			}
+		}
+		return stacks, nil
+	}
+	return nil, fmt.Errorf("listing stacks only supported for file:// backend")
+}
+
+// FindInstancesUsingUserData returns a list of instance names using the specified user-data script.
+func FindInstancesUsingUserData(ctx context.Context, cfg *config.Profile, provider providers.CloudProvider, userDataName string) ([]string, error) {
+	stacks, err := ListStacks(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	var matches []string
+	for _, name := range stacks {
+		sm := NewStackManager(cfg, provider, name)
+		// We use GetOutputs.
+		outs, err := sm.GetOutputs(ctx)
+		if err != nil {
+			// Could not get outputs (maybe stack not initialized or broken). Skip.
+			continue
+		}
+
+		if val, ok := outs["userDataName"]; ok {
+			if sVal, ok := val.Value.(string); ok && sVal == userDataName {
+				matches = append(matches, name)
+			}
+		}
+	}
+	return matches, nil
 }
