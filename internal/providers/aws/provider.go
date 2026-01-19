@@ -15,8 +15,10 @@ import (
 	awsec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 
 	// Pulumi AWS
+	pulumiaws "github.com/pulumi/pulumi-aws/sdk/v6/go/aws"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/ec2"
 	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/iam"
+	"github.com/pulumi/pulumi-aws/sdk/v6/go/aws/kms"
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -42,6 +44,56 @@ func (p *AWSProvider) GetSSHUser() string {
 
 func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
+		// 0. Get Caller Identity to secure KMS key
+		caller, err := pulumiaws.GetCallerIdentity(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		// Normalize ARN (if assumed-role, get the role ARN to prevent locking out if session expires)
+		principalArn := p.getPrincipalARN(caller.Arn)
+
+		// 0.5 Create KMS Key
+		// Restrictive policy: Only the creator (current user) has full access.
+		// However, we allow the account root (delegated admins) to schedule deletion.
+		// This ensures if the user leaves, an admin can clean up the resource without being able to decrypt it.
+		keyPolicy := fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Sid": "Allow access for Key Administrator",
+					"Effect": "Allow",
+					"Principal": {
+						"AWS": "%s"
+					},
+					"Action": "kms:*",
+					"Resource": "*"
+				},
+				{
+					"Sid": "Allow Account Root to Schedule Deletion",
+					"Effect": "Allow",
+					"Principal": {
+						"AWS": "arn:aws:iam::%s:root"
+					},
+					"Action": [
+						"kms:ScheduleKeyDeletion",
+						"kms:Delete*",
+						"kms:DescribeKey"
+					],
+					"Resource": "*"
+				}
+			]
+		}`, principalArn, caller.AccountId)
+
+		key, err := kms.NewKey(ctx, spec.Name+"-key", &kms.KeyArgs{
+			Description:          pulumi.String("Key for " + spec.Name),
+			Policy:               pulumi.String(keyPolicy),
+			DeletionWindowInDays: pulumi.Int(7),
+		})
+		if err != nil {
+			return err
+		}
+
 		// 1. Create Security Group
 		sg, err := ec2.NewSecurityGroup(ctx, spec.Name+"-sg", &ec2.SecurityGroupArgs{
 			Description: pulumi.String("Allow SSH"),
@@ -181,6 +233,12 @@ func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFu
 			UserData:            pulumi.String(spec.UserData),
 			Tags:                pulumiTags,
 			IamInstanceProfile:  instanceProfile.Name,
+			RootBlockDevice: &ec2.InstanceRootBlockDeviceArgs{
+				VolumeType:          pulumi.String("gp3"),
+				Encrypted:           pulumi.Bool(true),
+				KmsKeyId:            key.Arn,
+				DeleteOnTermination: pulumi.Bool(true),
+			},
 		})
 		if err != nil {
 			return err
@@ -253,4 +311,21 @@ func (p *AWSProvider) GetInstanceStatus(ctx context.Context, instanceID string) 
 		// CPUUsage requires CloudWatch, skipping for MVP
 		CPUUsage: 0.0,
 	}, nil
+}
+
+// getPrincipalARN normalizes the caller ARN.
+// If it is an assumed-role ARN (STS), it converts it to the underlying IAM Role ARN.
+// This ensures the policy remains valid even after the session expires.
+func (p *AWSProvider) getPrincipalARN(arn string) string {
+	if strings.Contains(arn, ":sts:") && strings.Contains(arn, ":assumed-role/") {
+		// Convert arn:aws:sts::account:assumed-role/role-name/session-name
+		// to      arn:aws:iam::account:role/role-name
+		arn = strings.Replace(arn, ":sts:", ":iam:", 1)
+		arn = strings.Replace(arn, ":assumed-role/", ":role/", 1)
+		// Remove the session name (last part)
+		if idx := strings.LastIndex(arn, "/"); idx != -1 {
+			arn = arn[:idx]
+		}
+	}
+	return arn
 }
