@@ -247,7 +247,11 @@ func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFu
 		// 5. Export Outputs
 		ctx.Export("instanceID", srv.ID())
 		ctx.Export("publicIP", srv.PublicIp)
+		ctx.Export("privateIP", srv.PrivateIp)
 		ctx.Export("publicDNS", srv.PublicDns)
+		if spec.ProfileName != "" {
+			ctx.Export("profileName", pulumi.String(spec.ProfileName))
+		}
 		if v, ok := pulumiTags["UserDataName"]; ok {
 			ctx.Export("userDataName", v)
 		} else {

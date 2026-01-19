@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/manifoldco/promptui"
+	"github.com/olekukonko/tablewriter"
 	"github.com/urfave/cli/v3"
 )
 
@@ -43,7 +44,7 @@ func GetRootCommands() []*cli.Command {
 			Name:      "list",
 			Aliases:   []string{"ls"},
 			Usage:     "List info about an instance",
-			ArgsUsage: "<name>",
+			ArgsUsage: "[name]",
 			Flags:     []cli.Flag{profileFlag},
 			Action:    listInstance,
 		},
@@ -59,19 +60,19 @@ func GetRootCommands() []*cli.Command {
 	}
 }
 
-func loadProfile(cmd *cli.Command) (*config.Profile, error) {
+func loadProfile(cmd *cli.Command) (*config.Profile, string, error) {
 	loader, err := config.NewLoader()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	appCfg, err := loader.Load()
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if len(appCfg.Profiles) == 0 {
-		return nil, fmt.Errorf("no configuration profiles found. Run 'privatebox config new <name>' to start")
+		return nil, "", fmt.Errorf("no configuration profiles found. Run 'privatebox config new <name>' to start")
 	}
 
 	// Determine profile
@@ -80,20 +81,20 @@ func loadProfile(cmd *cli.Command) (*config.Profile, error) {
 		profileName = appCfg.CurrentProfile
 	}
 	if profileName == "" {
-		return nil, fmt.Errorf("no current profile set")
+		return nil, "", fmt.Errorf("no current profile set")
 	}
 
 	profile, ok := appCfg.Profiles[profileName]
 	if !ok {
-		return nil, fmt.Errorf("profile '%s' not found", profileName)
+		return nil, "", fmt.Errorf("profile '%s' not found", profileName)
 	}
-	return &profile, nil
+	return &profile, profileName, nil
 }
 
-func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.StackManager, *config.Profile, providers.CloudProvider, error) {
-	profile, err := loadProfile(cmd)
+func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.StackManager, *config.Profile, string, providers.CloudProvider, error) {
+	profile, profileName, err := loadProfile(cmd)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, "", nil, err
 	}
 
 	// Provider Factory (Switch based on cfg.Provider in future)
@@ -101,12 +102,12 @@ func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.Stac
 	if profile.Provider == "aws" {
 		provider = aws.NewAWSProvider(*profile)
 	} else {
-		return nil, nil, nil, fmt.Errorf("unsupported provider: %s", profile.Provider)
+		return nil, nil, "", nil, fmt.Errorf("unsupported provider: %s", profile.Provider)
 	}
 
 	// Pass pointer to profile
 	mgr := orchestration.NewStackManager(profile, provider, instanceName)
-	return mgr, profile, provider, nil
+	return mgr, profile, profileName, provider, nil
 }
 
 func createInstance(ctx context.Context, cmd *cli.Command) error {
@@ -115,7 +116,7 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("instance name is required")
 	}
 
-	mgr, cfg, _, err := getStackManager(cmd, name)
+	mgr, cfg, profileName, _, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}
@@ -159,6 +160,7 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 		Type:         cfg.AWS.InstanceType,
 		UserData:     userDataContent,
 		UserDataName: userDataName,
+		ProfileName:  profileName,
 	}
 
 	_, err = mgr.Up(ctx, spec)
@@ -176,7 +178,7 @@ func destroyInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("instance name is required")
 	}
 
-	mgr, _, _, err := getStackManager(cmd, name)
+	mgr, _, _, _, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}
@@ -191,39 +193,79 @@ func destroyInstance(ctx context.Context, cmd *cli.Command) error {
 }
 
 func listInstance(ctx context.Context, cmd *cli.Command) error {
+	// Determine profile first, as we need it to list stacks
+	profile, _, err := loadProfile(cmd)
+	if err != nil {
+		return err
+	}
+
+	var instances []string
 	name := cmd.Args().First()
-	if name == "" {
-		return fmt.Errorf("instance name is required")
-	}
-
-	mgr, _, provider, err := getStackManager(cmd, name)
-	if err != nil {
-		return err
-	}
-
-	outs, err := mgr.GetOutputs(ctx)
-	if err != nil {
-		return err
-	}
-
-	id, ok := outs["instanceID"].Value.(string)
-	if !ok {
-		return fmt.Errorf("instanceID output not found")
-	}
-	ip, _ := outs["publicIP"].Value.(string)
-
-	fmt.Printf("Instance: %s\n", name)
-	fmt.Printf("ID:       %s\n", id)
-	fmt.Printf("IP:       %s\n", ip)
-
-	// Fetch runtime status
-	status, err := provider.GetInstanceStatus(ctx, id)
-	if err != nil {
-		fmt.Printf("Status:   Unknown (%v)\n", err)
+	if name != "" {
+		instances = []string{name}
 	} else {
-		fmt.Printf("State:    %s\n", status.State)
+		// List all stacks
+		stacks, err := orchestration.ListStacks(profile)
+		if err != nil {
+			return fmt.Errorf("failed to list instances: %w", err)
+		}
+		instances = stacks
 	}
 
+	if len(instances) == 0 {
+		fmt.Println("No instances found.")
+		return nil
+	}
+
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"NAME", "PROFILE", "PRIVATE IP", "PUBLIC IP", "STATE"})
+	table.SetBorder(false)
+	table.SetAutoWrapText(false)
+
+	for _, instName := range instances {
+		// Create provider
+		var provider providers.CloudProvider
+		if profile.Provider == "aws" {
+			provider = aws.NewAWSProvider(*profile)
+		} else {
+			fmt.Fprintf(os.Stderr, "Skipping %s: unsupported provider %s\n", instName, profile.Provider)
+			continue
+		}
+
+		mgr := orchestration.NewStackManager(profile, provider, instName)
+
+		outs, err := mgr.GetOutputs(ctx)
+		if err != nil {
+			// If we can't get outputs (e.g. stack broken), just show empty or error
+			table.Append([]string{instName, "", "", "", "Error: " + err.Error()})
+			continue
+		}
+
+		id, _ := outs["instanceID"].Value.(string)
+		publicIP, _ := outs["publicIP"].Value.(string)
+		privateIP, _ := outs["privateIP"].Value.(string)
+		profileName, _ := outs["profileName"].Value.(string)
+
+		if profileName == "" {
+			profileName = "Unknown"
+		}
+
+		state := "Unknown"
+		if id != "" {
+			status, err := provider.GetInstanceStatus(ctx, id)
+			if err == nil {
+				state = status.State
+			} else {
+				state = fmt.Sprintf("Error: %v", err)
+			}
+		} else {
+			state = "Provisioning/Error"
+		}
+
+		table.Append([]string{instName, profileName, privateIP, publicIP, state})
+	}
+
+	table.Render()
 	return nil
 }
 
@@ -231,7 +273,7 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.Args().First()
 	if name == "" {
 		// No name provided, try to find available instances
-		profile, err := loadProfile(cmd)
+		profile, _, err := loadProfile(cmd)
 		if err != nil {
 			return err
 		}
@@ -268,7 +310,7 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 		}
 	}
 
-	mgr, cfg, provider, err := getStackManager(cmd, name)
+	mgr, cfg, _, provider, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}

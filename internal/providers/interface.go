@@ -10,6 +10,7 @@ import (
 type InstanceSpec struct {
 	Name         string
 	Type         string            // e.g. "t3.micro"
+	ProfileName  string            // Profile used to create the instance
 	UserData     string            // Cloud-init script or similar
 	UserDataName string            // Name of the managed userdata script (optional)
 	Tags         map[string]string // Resource tags
