@@ -21,7 +21,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Mise
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v3
 
       - name: Semantic Release
         uses: cycjimmy/semantic-release-action@v4
