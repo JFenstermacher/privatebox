@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,10 +117,6 @@ func TestLoader_Load(t *testing.T) {
 		CurrentProfile: "yaml-profile",
 		Profiles:       map[string]Profile{"default": {Provider: "aws"}},
 	})
-	validJSON, _ := json.Marshal(AppConfig{
-		CurrentProfile: "json-profile",
-		Profiles:       map[string]Profile{"default": {Provider: "aws"}},
-	})
 
 	tests := []testCase{
 		{
@@ -134,23 +129,6 @@ func TestLoader_Load(t *testing.T) {
 			name: "YAML Only",
 			files: []fileState{
 				{name: "config.yaml", content: validYAML},
-			},
-			wantProfile: "yaml-profile",
-			wantErr:     false,
-		},
-		{
-			name: "JSON Only (Migration)",
-			files: []fileState{
-				{name: "config.json", content: validJSON},
-			},
-			wantProfile: "json-profile",
-			wantErr:     false,
-		},
-		{
-			name: "Both Exists (Prefer YAML)",
-			files: []fileState{
-				{name: "config.yaml", content: validYAML},
-				{name: "config.json", content: validJSON},
 			},
 			wantProfile: "yaml-profile",
 			wantErr:     false,

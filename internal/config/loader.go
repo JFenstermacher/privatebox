@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,42 +55,7 @@ func (l *Loader) Load() (*AppConfig, error) {
 		return &appCfg, nil
 	}
 
-	// 2. Try config.json (Legacy)
-	jsonPath := filepath.Join(filepath.Dir(l.configPath), "config.json")
-	if _, err := os.Stat(jsonPath); err == nil {
-		data, err := os.ReadFile(jsonPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read legacy config file: %w", err)
-		}
-
-		var appCfg AppConfig
-		if err := json.Unmarshal(data, &appCfg); err != nil {
-			return nil, fmt.Errorf("failed to parse legacy config: %w", err)
-		}
-
-		// Migration: If Profiles is empty, it might be the old format
-		if appCfg.Profiles == nil {
-			var oldProfile Profile
-			// Try unmarshaling as a single Profile
-			if err := json.Unmarshal(data, &oldProfile); err == nil {
-				// If successful and looks valid (e.g. has Provider), wrap it
-				if oldProfile.Provider != "" {
-					appCfg = NewAppConfig()
-					appCfg.Profiles["default"] = oldProfile
-					return &appCfg, nil
-				}
-			}
-		}
-
-		// Ensure defaults if empty
-		if appCfg.Profiles == nil {
-			appCfg = NewAppConfig()
-		}
-
-		return &appCfg, nil
-	}
-
-	// 3. No config found, return defaults
+	// 2. No config found, return defaults
 	cfg := NewAppConfig()
 	return &cfg, nil
 }
