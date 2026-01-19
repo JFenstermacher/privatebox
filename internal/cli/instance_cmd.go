@@ -9,8 +9,8 @@ import (
 	"privatebox/internal/orchestration"
 	"privatebox/internal/providers"
 	"privatebox/internal/providers/aws"
-	"privatebox/internal/userdata"
 	"strings"
+	"sync"
 
 	"github.com/manifoldco/promptui"
 	"github.com/olekukonko/tablewriter"
@@ -56,6 +56,20 @@ func GetRootCommands() []*cli.Command {
 				profileFlag,
 			},
 			Action: connectInstance,
+		},
+		{
+			Name:      "up",
+			Usage:     "Start an instance",
+			ArgsUsage: "[name]",
+			Flags:     []cli.Flag{profileFlag},
+			Action:    upInstance,
+		},
+		{
+			Name:      "down",
+			Usage:     "Stop an instance",
+			ArgsUsage: "[name]",
+			Flags:     []cli.Flag{profileFlag},
+			Action:    downInstance,
 		},
 	}
 }
@@ -126,24 +140,24 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 	var userDataName string
 
 	if userDataArg != "" {
-		// Check if it's a stored script
-		um, err := userdata.NewManager()
+		// Load config to check for user-data alias
+		loader, err := config.NewLoader()
+		if err != nil {
+			return err
+		}
+		appCfg, err := loader.Load()
 		if err != nil {
 			return err
 		}
 
-		if um.Exists(userDataArg) {
-			content, err := um.Get(userDataArg)
-			if err != nil {
-				return fmt.Errorf("failed to get userdata script: %w", err)
-			}
-			userDataContent = string(content)
+		if content, ok := appCfg.UserData[userDataArg]; ok {
+			userDataContent = content
 			userDataName = userDataArg
 		} else {
 			// Assume file path
 			data, err := os.ReadFile(userDataArg)
 			if err != nil {
-				return fmt.Errorf("user-data argument is neither a stored script nor a valid file: %w", err)
+				return fmt.Errorf("user-data argument is neither a stored alias nor a valid file: %w", err)
 			}
 			userDataContent = string(data)
 		}
@@ -270,44 +284,9 @@ func listInstance(ctx context.Context, cmd *cli.Command) error {
 }
 
 func connectInstance(ctx context.Context, cmd *cli.Command) error {
-	name := cmd.Args().First()
-	if name == "" {
-		// No name provided, try to find available instances
-		profile, _, err := loadProfile(cmd)
-		if err != nil {
-			return err
-		}
-
-		stacks, err := orchestration.ListStacks(profile)
-		if err != nil {
-			return fmt.Errorf("failed to list instances: %w", err)
-		}
-
-		if len(stacks) == 0 {
-			return fmt.Errorf("no instances found")
-		} else if len(stacks) == 1 {
-			name = stacks[0]
-			fmt.Printf("Only one instance found, connecting to '%s'...\n", name)
-		} else {
-			// Interactive selection
-			prompt := promptui.Select{
-				Label: "Select instance to connect to",
-				Items: stacks,
-				Searcher: func(input string, index int) bool {
-					item := stacks[index]
-					name := strings.ToLower(item)
-					input = strings.ToLower(input)
-					return strings.Contains(name, input)
-				},
-				StartInSearchMode: true,
-			}
-
-			_, result, err := prompt.Run()
-			if err != nil {
-				return fmt.Errorf("prompt failed: %w", err)
-			}
-			name = result
-		}
+	name, err := selectInstance(ctx, cmd, "")
+	if err != nil {
+		return err
 	}
 
 	mgr, cfg, _, provider, err := getStackManager(cmd, name)
@@ -382,4 +361,180 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	sshCmd.Env = env
 
 	return sshCmd.Run()
+}
+
+func upInstance(ctx context.Context, cmd *cli.Command) error {
+	name, err := selectInstance(ctx, cmd, "stopped")
+	if err != nil {
+		return err
+	}
+
+	mgr, _, _, provider, err := getStackManager(cmd, name)
+	if err != nil {
+		return err
+	}
+
+	outs, err := mgr.GetOutputs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get stack outputs: %w", err)
+	}
+
+	instanceID, ok := outs["instanceID"].Value.(string)
+	if !ok || instanceID == "" {
+		return fmt.Errorf("instance ID not found in stack outputs")
+	}
+
+	fmt.Printf("Starting instance '%s' (%s)...\n", name, instanceID)
+	if err := provider.StartInstance(ctx, instanceID); err != nil {
+		return fmt.Errorf("failed to start instance: %w", err)
+	}
+
+	fmt.Println("Instance start requested.")
+	return nil
+}
+
+func downInstance(ctx context.Context, cmd *cli.Command) error {
+	name, err := selectInstance(ctx, cmd, "running")
+	if err != nil {
+		return err
+	}
+
+	mgr, _, _, provider, err := getStackManager(cmd, name)
+	if err != nil {
+		return err
+	}
+
+	outs, err := mgr.GetOutputs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get stack outputs: %w", err)
+	}
+
+	instanceID, ok := outs["instanceID"].Value.(string)
+	if !ok || instanceID == "" {
+		return fmt.Errorf("instance ID not found in stack outputs")
+	}
+
+	fmt.Printf("Stopping instance '%s' (%s)...\n", name, instanceID)
+	if err := provider.StopInstance(ctx, instanceID); err != nil {
+		return fmt.Errorf("failed to stop instance: %w", err)
+	}
+
+	fmt.Println("Instance stop requested.")
+	return nil
+}
+
+func selectInstance(ctx context.Context, cmd *cli.Command, filterState string) (string, error) {
+	name := cmd.Args().First()
+	if name != "" {
+		return name, nil
+	}
+
+	candidates, err := getInstancesWithState(ctx, cmd, filterState)
+	if err != nil {
+		return "", err
+	}
+
+	if len(candidates) == 0 {
+		msg := "no instances found"
+		if filterState != "" {
+			msg += fmt.Sprintf(" with state '%s'", filterState)
+		}
+		return "", fmt.Errorf(msg)
+	} else if len(candidates) == 1 {
+		name = candidates[0]
+		fmt.Printf("Selected '%s'\n", name)
+		return name, nil
+	}
+
+	// Interactive selection
+	prompt := promptui.Select{
+		Label: "Select instance",
+		Items: candidates,
+		Searcher: func(input string, index int) bool {
+			item := candidates[index]
+			name := strings.ToLower(item)
+			input = strings.ToLower(input)
+			return strings.Contains(name, input)
+		},
+		StartInSearchMode: true,
+	}
+
+	_, result, err := prompt.Run()
+	if err != nil {
+		return "", fmt.Errorf("prompt failed: %w", err)
+	}
+	return result, nil
+}
+
+func getInstancesWithState(ctx context.Context, cmd *cli.Command, desiredState string) ([]string, error) {
+	profile, _, err := loadProfile(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	stacks, err := orchestration.ListStacks(profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list instances: %w", err)
+	}
+
+	if desiredState == "" {
+		return stacks, nil
+	}
+
+	// Filter by state
+	var (
+		mu         sync.Mutex
+		candidates []string
+		wg         sync.WaitGroup
+	)
+
+	fmt.Printf("Filtering instances by state '%s'...\n", desiredState)
+
+	for _, stackName := range stacks {
+		wg.Add(1)
+		go func(name string) {
+			defer wg.Done()
+
+			// We need a provider for each stack
+			var provider providers.CloudProvider
+			if profile.Provider == "aws" {
+				provider = aws.NewAWSProvider(*profile)
+			} else {
+				return
+			}
+
+			mgr := orchestration.NewStackManager(profile, provider, name)
+			outs, err := mgr.GetOutputs(ctx)
+			if err != nil {
+				return
+			}
+
+			id, ok := outs["instanceID"].Value.(string)
+			if !ok || id == "" {
+				return
+			}
+
+			status, err := provider.GetInstanceStatus(ctx, id)
+			if err != nil {
+				return
+			}
+
+			// Check match
+			match := false
+			if desiredState == "running" && status.State == "running" {
+				match = true
+			} else if desiredState == "stopped" && status.State == "stopped" {
+				match = true
+			}
+
+			if match {
+				mu.Lock()
+				candidates = append(candidates, name)
+				mu.Unlock()
+			}
+		}(stackName)
+	}
+
+	wg.Wait()
+	return candidates, nil
 }

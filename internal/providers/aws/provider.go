@@ -333,3 +333,29 @@ func (p *AWSProvider) getPrincipalARN(arn string) string {
 	}
 	return arn
 }
+
+func (p *AWSProvider) StartInstance(ctx context.Context, instanceID string) error {
+	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(p.cfg.Region))
+	if err != nil {
+		return fmt.Errorf("failed to load aws config: %w", err)
+	}
+
+	client := awsec2.NewFromConfig(cfg)
+	_, err = client.StartInstances(ctx, &awsec2.StartInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	return err
+}
+
+func (p *AWSProvider) StopInstance(ctx context.Context, instanceID string) error {
+	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(p.cfg.Region))
+	if err != nil {
+		return fmt.Errorf("failed to load aws config: %w", err)
+	}
+
+	client := awsec2.NewFromConfig(cfg)
+	_, err = client.StopInstances(ctx, &awsec2.StopInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	return err
+}

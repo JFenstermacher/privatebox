@@ -37,4 +37,10 @@ type CloudProvider interface {
 
 	// GetInstanceStatus fetches real-time data from the cloud API (outside Pulumi state).
 	GetInstanceStatus(ctx context.Context, instanceID string) (*RuntimeInfo, error)
+
+	// StartInstance starts a stopped instance.
+	StartInstance(ctx context.Context, instanceID string) error
+
+	// StopInstance stops a running instance.
+	StopInstance(ctx context.Context, instanceID string) error
 }

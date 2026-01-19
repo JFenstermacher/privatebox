@@ -13,7 +13,6 @@ import (
 func main() {
 	commands := []*cli.Command{
 		internalCli.ConfigCommand(),
-		internalCli.UserDataCmd(),
 	}
 	commands = append(commands, internalCli.GetRootCommands()...)
 
