@@ -41,8 +41,9 @@ func ConfigCommand() *cli.Command {
 				},
 			},
 			{
-				Name:  "list",
-				Usage: "List all profiles",
+				Name:    "list",
+				Aliases: []string{"ls"},
+				Usage:   "List all profiles",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					loader, err := config.NewLoader()
 					if err != nil {

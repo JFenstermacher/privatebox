@@ -140,27 +140,16 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 	var userDataName string
 
 	if userDataArg != "" {
-		// Load config to check for user-data alias
-		loader, err := config.NewLoader()
+		// Assume file path
+		data, err := os.ReadFile(userDataArg)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to read user-data file: %w", err)
 		}
-		appCfg, err := loader.Load()
-		if err != nil {
-			return err
-		}
-
-		if content, ok := appCfg.UserData[userDataArg]; ok {
-			userDataContent = content
-			userDataName = userDataArg
-		} else {
-			// Assume file path
-			data, err := os.ReadFile(userDataArg)
-			if err != nil {
-				return fmt.Errorf("user-data argument is neither a stored alias nor a valid file: %w", err)
-			}
-			userDataContent = string(data)
-		}
+		userDataContent = string(data)
+	} else if cfg.UserData != "" {
+		// Use default from profile
+		userDataContent = cfg.UserData
+		userDataName = "default"
 	}
 
 	// Allow override of instance type
