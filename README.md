@@ -6,9 +6,10 @@ Privatebox is a CLI tool for managing remote cloud instances with a focus on pri
 
 *   **Cloud Agnostic Design**: Currently supports AWS, with architecture in place for GCP, Azure, and DigitalOcean.
 *   **Private by Default**: Uses a local backend (`file://`) for state management, keeping your infrastructure data on your machine.
+*   **Secure by Design**: Encrypts root volumes with a per-instance KMS key restricted to your user.
 *   **Multi-Profile Support**: Manage multiple environments (e.g., dev, prod) with named configuration profiles.
 *   **Simple Configuration**: YAML-based configuration located at `~/.config/privatebox/config.yaml`.
-*   **Unified Interface**: Consistent `create`, `list`, `destroy`, `connect` commands regardless of the underlying provider.
+*   **Unified Interface**: Consistent `create`, `list`, `destroy`, `connect` commands.
 
 ## Installation
 
@@ -19,67 +20,196 @@ go build -o privatebox cmd/privatebox/main.go
 mv privatebox /usr/local/bin/ # Optional
 ```
 
-## Usage
+## Quick Start
 
-### 1. Configuration Management
+1.  **Create a profile**:
+    ```bash
+    privatebox config new default
+    ```
+2.  **Create an instance**:
+    ```bash
+    privatebox create my-box
+    ```
+3.  **Connect**:
+    ```bash
+    privatebox connect my-box
+    ```
 
-Privatebox supports multiple named configuration profiles.
+## Configuration
 
-**Initialize:**
+Configuration is stored in `~/.config/privatebox/config.yaml`. You can edit it manually or use:
 ```bash
-privatebox config init
-```
-
-**Manage Profiles:**
-```bash
-# List all profiles
-privatebox config list
-
-# Create a new profile (clones default defaults)
-privatebox config new dev
-
-# Switch default profile
-privatebox config use dev
-
-# Edit configuration (opens $EDITOR)
 privatebox config edit
 ```
 
-### 2. Configure AWS Credentials
+### Configuration Structure
 
-Ensure you have standard AWS credentials set up (environment variables `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` or `~/.aws/credentials`).
-
-### 3. Manage Instances
-
-**Create an instance:**
-
-```bash
-# Create using the current default profile
-privatebox create my-dev-box
-
-# Create using a specific profile (e.g., prod)
-privatebox create --profile prod --type t3.medium my-app-server
-
-# Create with user-data script
-privatebox create --user-data ./setup.sh my-worker
+```yaml
+current_profile: default
+profiles:
+  default:
+    provider: aws
+    region: us-east-1
+    ssh_public_key_path: ~/.ssh/id_rsa.pub
+    connect_command: ssh -i {key} {user}@{ip}
+    aws:
+      instance_type: t3.micro
+      # Optional: Override AMI
+      # ami: ami-12345678 
 ```
 
-**List instance details:**
+### Common Configurations
 
-```bash
-privatebox list my-dev-box
+#### 1. Custom Ingress/Egress Rules
+Restrict access to specific ports or IPs. By default, SSH (22) is open to the world.
+
+```yaml
+profiles:
+  secure-dev:
+    provider: aws
+    region: us-east-1
+    aws:
+      instance_type: t3.micro
+      ingress_rules:
+        # Allow SSH only from a specific IP
+        - protocol: tcp
+          from_port: 22
+          to_port: 22
+          cidr_blocks: ["203.0.113.5/32"]
+        # Allow HTTP
+        - protocol: tcp
+          from_port: 80
+          to_port: 80
+          cidr_blocks: ["0.0.0.0/0"]
+      egress_rules:
+        # Allow all outbound traffic (default behavior)
+        - protocol: "-1"
+          from_port: 0
+          to_port: 0
+          cidr_blocks: ["0.0.0.0/0"]
 ```
 
-**SSH into the instance:**
+#### 2. Using a Specific AWS Profile
+If you use `~/.aws/config` profiles to manage credentials (e.g., for different accounts).
 
-```bash
-privatebox connect my-dev-box
+```yaml
+profiles:
+  work-account:
+    provider: aws
+    region: us-west-2
+    aws:
+      profile: my-work-profile # Matches [profile my-work-profile] in ~/.aws/config
+      instance_type: t3.medium
 ```
 
-**Destroy the instance:**
+#### 3. Custom Connection Command (Mosh / SSM)
+Change how `privatebox connect` connects to your instance.
+
+**Using Mosh:**
+```yaml
+profiles:
+  mosh-user:
+    connect_command: mosh {user}@{ip}
+```
+
+**Using AWS SSM (Session Manager):**
+```yaml
+profiles:
+  ssm-user:
+    # Requires AWS CLI and Session Manager plugin installed
+    connect_command: aws ssm start-session --target {id}
+```
+*Note: Instances are created with the `AmazonSSMManagedInstanceCore` IAM policy attached by default.*
+
+#### 4. Default User Data
+Define a startup script that runs automatically when you create an instance with this profile.
+
+```yaml
+profiles:
+  docker-host:
+    provider: aws
+    aws:
+      instance_type: t3.small
+    user_data: |
+      #!/bin/bash
+      apt-get update
+      apt-get install -y docker.io
+      usermod -aG docker ubuntu
+```
+
+#### 5. Environment Variables
+Inject environment variables into your shell when running `privatebox connect`.
+
+```yaml
+profiles:
+  dev:
+    env:
+      EDITOR: vim
+      # These variables are set in the local shell that executes ssh/mosh
+      # They can be passed to the remote host if ssh config permits (SendEnv)
+```
+
+## Usage Commands
+
+### Instance Management
+
+*   **List all instances**:
+    ```bash
+    privatebox list
+    # or
+    privatebox ls
+    ```
+
+*   **Create**:
+    ```bash
+    # Use default profile configuration
+    privatebox create my-vm
+
+    # Use a specific profile
+    privatebox create --profile work-account my-work-vm
+
+    # Override instance type
+    privatebox create --type c5.large compute-node
+
+    # Provide a one-off user-data script
+    privatebox create --user-data ./setup.sh custom-node
+    ```
+
+*   **Connect**:
+    ```bash
+    # Connects using the configured command (SSH default)
+    privatebox connect my-vm
+    
+    # Fuzzy find instance if name omitted
+    privatebox connect
+    ```
+
+*   **Power Management**:
+    ```bash
+    # Start a stopped instance
+    privatebox up my-vm
+
+    # Stop a running instance
+    privatebox down my-vm
+    ```
+
+*   **Destroy**:
+    ```bash
+    # Permanently delete the instance and its storage
+    privatebox destroy my-vm
+    ```
+
+### Profile Management
 
 ```bash
-privatebox destroy my-dev-box
+# List available profiles
+privatebox config list
+
+# Create a new profile
+privatebox config new <name>
+
+# Switch the active profile
+privatebox config use <name>
 ```
 
 ## Architecture
@@ -87,7 +217,11 @@ privatebox destroy my-dev-box
 *   **Language**: Go
 *   **CLI Framework**: [urfave/cli/v3](https://github.com/urfave/cli)
 *   **IaC Engine**: [Pulumi Automation API](https://www.pulumi.com/automation/)
-*   **State**: Local file backend
+*   **State**: Local file backend. Each instance stores its state in `~/.privatebox/state/<instance_name>/`.
+*   **Security**:
+    *   **KMS**: Creates a dedicated AWS KMS Key per instance.
+    *   **EBS**: Encrypts root volume with that key.
+    *   **Policy**: Key policy restricts access to the creating user only (plus root for deletion).
 
 ## Development
 
