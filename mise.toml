@@ -1,6 +1,7 @@
 [tools]
 go = "1.25.5"
 golangci-lint = "2.8.0"
+goreleaser = "latest"
 
 [tasks.format]
 description = "Format Go code"
@@ -18,6 +19,10 @@ run = "go test -v ./..."
 [tasks.build]
 description = "Build the binary"
 run = "go build -o privatebox cmd/privatebox/main.go"
+
+[tasks.release]
+description = "Run GoReleaser"
+run = "goreleaser release --clean"
 
 [tasks.ci]
 description = "Run CI pipeline"
