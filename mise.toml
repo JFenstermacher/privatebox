@@ -1,0 +1,10 @@
+[tools]
+go = "latest"
+golangci-lint = "latest"
+
+[tasks]
+format = { description = "Format Go code", run = "go fmt ./..." }
+lint = { description = "Lint Go code", run = "golangci-lint run" }
+test = { description = "Run tests", run = "go test -v ./..." }
+build = { description = "Build the binary", run = "go build -o privatebox cmd/privatebox/main.go" }
+ci = { description = "Run CI pipeline", depends = ["format", "lint", "test", "build"] }
