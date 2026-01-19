@@ -1,10 +1,23 @@
 [tools]
-go = "latest"
+go = "1.25.5"
 golangci-lint = "latest"
 
-[tasks]
-format = { description = "Format Go code", run = "go fmt ./..." }
-lint = { description = "Lint Go code", run = "golangci-lint run" }
-test = { description = "Run tests", run = "go test -v ./..." }
-build = { description = "Build the binary", run = "go build -o privatebox cmd/privatebox/main.go" }
-ci = { description = "Run CI pipeline", depends = ["format", "lint", "test", "build"] }
+[tasks.format]
+description = "Format Go code"
+run = "go fmt ./..."
+
+[tasks.lint]
+description = "Lint Go code"
+run = "golangci-lint run"
+
+[tasks.test]
+description = "Run tests"
+run = "go test -v ./..."
+
+[tasks.build]
+description = "Build the binary"
+run = "go build -o privatebox cmd/privatebox/main.go"
+
+[tasks.ci]
+description = "Run CI pipeline"
+depends = ["format", "lint", "test", "build"]
