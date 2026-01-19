@@ -1,6 +1,6 @@
 [tools]
 go = "1.25.5"
-golangci-lint = "1.63.4"
+golangci-lint = "2.8.0"
 
 [tasks.format]
 description = "Format Go code"
