@@ -13,46 +13,43 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// InstanceCommands returns the CLI commands for managing instances.
-func InstanceCommands() *cli.Command {
+// GetRootCommands returns the root-level CLI commands for managing instances.
+func GetRootCommands() []*cli.Command {
 	profileFlag := &cli.StringFlag{Name: "profile", Usage: "Configuration profile to use"}
 
-	return &cli.Command{
-		Name:  "instance",
-		Usage: "Manage remote instances",
-		Commands: []*cli.Command{
-			{
-				Name:      "create",
-				Usage:     "Create a new instance",
-				ArgsUsage: "<name>",
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "type", Usage: "Instance type (e.g. t3.small)"},
-					&cli.StringFlag{Name: "user-data", Usage: "Path to user-data script"},
-					profileFlag,
-				},
-				Action: createInstance,
+	return []*cli.Command{
+		{
+			Name:      "create",
+			Usage:     "Create a new instance",
+			ArgsUsage: "<name>",
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "type", Usage: "Instance type (e.g. t3.small)"},
+				&cli.StringFlag{Name: "user-data", Usage: "Path to user-data script"},
+				profileFlag,
 			},
-			{
-				Name:      "destroy",
-				Usage:     "Destroy an instance",
-				ArgsUsage: "<name>",
-				Flags:     []cli.Flag{profileFlag},
-				Action:    destroyInstance,
-			},
-			{
-				Name:      "list",
-				Usage:     "List info about an instance",
-				ArgsUsage: "<name>",
-				Flags:     []cli.Flag{profileFlag},
-				Action:    listInstance,
-			},
-			{
-				Name:      "ssh",
-				Usage:     "SSH into an instance",
-				ArgsUsage: "<name>",
-				Flags:     []cli.Flag{profileFlag},
-				Action:    sshInstance,
-			},
+			Action: createInstance,
+		},
+		{
+			Name:      "destroy",
+			Usage:     "Destroy an instance",
+			ArgsUsage: "<name>",
+			Flags:     []cli.Flag{profileFlag},
+			Action:    destroyInstance,
+		},
+		{
+			Name:      "list",
+			Aliases:   []string{"ls"},
+			Usage:     "List info about an instance",
+			ArgsUsage: "<name>",
+			Flags:     []cli.Flag{profileFlag},
+			Action:    listInstance,
+		},
+		{
+			Name:      "connect",
+			Usage:     "Connect (SSH) to an instance",
+			ArgsUsage: "<name>",
+			Flags:     []cli.Flag{profileFlag},
+			Action:    connectInstance,
 		},
 	}
 }
@@ -194,7 +191,7 @@ func listInstance(ctx context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func sshInstance(ctx context.Context, cmd *cli.Command) error {
+func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	name := cmd.Args().First()
 	if name == "" {
 		return fmt.Errorf("instance name is required")

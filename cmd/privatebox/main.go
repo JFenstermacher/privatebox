@@ -11,21 +11,15 @@ import (
 )
 
 func main() {
+	commands := []*cli.Command{
+		internalCli.ConfigCommand(),
+	}
+	commands = append(commands, internalCli.GetRootCommands()...)
+
 	cmd := &cli.Command{
-		Name:  "privatebox",
-		Usage: "Manage remote cloud instances",
-		Commands: []*cli.Command{
-			internalCli.ConfigCommand(),
-			internalCli.InstanceCommands(),
-			{
-				Name:  "hello",
-				Usage: "Say hello",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					fmt.Println("Hello from Privatebox!")
-					return nil
-				},
-			},
-		},
+		Name:     "privatebox",
+		Usage:    "Manage remote cloud instances",
+		Commands: commands,
 	}
 
 	if err := cmd.Run(context.Background(), os.Args); err != nil {

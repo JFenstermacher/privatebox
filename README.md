@@ -8,7 +8,7 @@ Privatebox is a CLI tool for managing remote cloud instances with a focus on pri
 *   **Private by Default**: Uses a local backend (`file://`) for state management, keeping your infrastructure data on your machine.
 *   **Multi-Profile Support**: Manage multiple environments (e.g., dev, prod) with named configuration profiles.
 *   **Simple Configuration**: JSON-based configuration located at `~/.config/privatebox/config.json`.
-*   **Unified Interface**: Consistent `create`, `list`, `destroy`, `ssh` commands regardless of the underlying provider.
+*   **Unified Interface**: Consistent `create`, `list`, `destroy`, `connect` commands regardless of the underlying provider.
 
 ## Installation
 
@@ -55,31 +55,31 @@ Ensure you have standard AWS credentials set up (environment variables `AWS_ACCE
 
 ```bash
 # Create using the current default profile
-privatebox instance create my-dev-box
+privatebox create my-dev-box
 
 # Create using a specific profile (e.g., prod)
-privatebox instance create --profile prod --type t3.medium my-app-server
+privatebox create --profile prod --type t3.medium my-app-server
 
 # Create with user-data script
-privatebox instance create --user-data ./setup.sh my-worker
+privatebox create --user-data ./setup.sh my-worker
 ```
 
 **List instance details:**
 
 ```bash
-privatebox instance list my-dev-box
+privatebox list my-dev-box
 ```
 
 **SSH into the instance:**
 
 ```bash
-privatebox instance ssh my-dev-box
+privatebox connect my-dev-box
 ```
 
 **Destroy the instance:**
 
 ```bash
-privatebox instance destroy my-dev-box
+privatebox destroy my-dev-box
 ```
 
 ## Architecture

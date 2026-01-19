@@ -6,6 +6,7 @@ import (
 	"os"
 	"privatebox/internal/config"
 	"privatebox/internal/providers"
+	"strings"
 
 	"github.com/pulumi/pulumi/sdk/v3/go/auto"
 	"github.com/pulumi/pulumi/sdk/v3/go/auto/optdestroy"
@@ -30,16 +31,22 @@ func NewStackManager(cfg *config.Profile, provider providers.CloudProvider, inst
 	}
 }
 
-// getStack initializes the automation API stack.
-func (s *StackManager) getStack(ctx context.Context, spec providers.InstanceSpec) (auto.Stack, error) {
-	// Ensure the workdir exists for local state if needed
-	// Pulumi automation API handles workspace setup, but we want to control the backend
-	// The backend URL is set via environment variable PULUMI_BACKEND_URL or project settings.
-	// For local backend, we usually set the environment variable.
+// getEnv constructs the environment variables for the Pulumi stack,
+// handling backend isolation for local file backends.
+func (s *StackManager) getEnv() map[string]string {
+	backend := s.cfg.PulumiBackend
+	// If using a local file backend, ensure each instance has its own directory
+	// to avoid locking issues and provide clean separation.
+	if strings.HasPrefix(backend, "file://") {
+		if !strings.HasSuffix(backend, "/") {
+			backend += "/"
+		}
+		backend += s.stackName
+	}
 
 	env := map[string]string{
 		"PULUMI_CONFIG_PASSPHRASE": "", // No passphrase for local dev simplicity, or prompt user in real app
-		"PULUMI_BACKEND_URL":       s.cfg.PulumiBackend,
+		"PULUMI_BACKEND_URL":       backend,
 	}
 
 	// Set AWS specific env vars if present in config
@@ -47,6 +54,18 @@ func (s *StackManager) getStack(ctx context.Context, spec providers.InstanceSpec
 		env["AWS_PROFILE"] = s.cfg.AWS.Profile
 	}
 	env["AWS_REGION"] = s.cfg.Region
+
+	return env
+}
+
+// getStack initializes the automation API stack.
+func (s *StackManager) getStack(ctx context.Context, spec providers.InstanceSpec) (auto.Stack, error) {
+	// Ensure the workdir exists for local state if needed
+	// Pulumi automation API handles workspace setup, but we want to control the backend
+	// The backend URL is set via environment variable PULUMI_BACKEND_URL or project settings.
+	// For local backend, we usually set the environment variable.
+
+	env := s.getEnv()
 
 	// Prepare the program
 	program := s.provider.GetPulumiProgram(spec)
@@ -94,10 +113,7 @@ func (s *StackManager) Destroy(ctx context.Context) (auto.DestroyResult, error) 
 	// In a real CLI, we might not have the spec during destroy, so we might need `SelectStack` instead.
 
 	// Better approach for destroy: Try SelectStack first.
-	env := map[string]string{
-		"PULUMI_CONFIG_PASSPHRASE": "",
-		"PULUMI_BACKEND_URL":       s.cfg.PulumiBackend,
-	}
+	env := s.getEnv()
 
 	// We need a program even for SelectStackInlineSource usually, but let's try SelectStack
 	// which assumes the project exists in the workspace.
@@ -123,10 +139,7 @@ func (s *StackManager) Destroy(ctx context.Context) (auto.DestroyResult, error) 
 // GetOutputs returns the stack outputs.
 func (s *StackManager) GetOutputs(ctx context.Context) (auto.OutputMap, error) {
 	// Reconstruct stack
-	env := map[string]string{
-		"PULUMI_CONFIG_PASSPHRASE": "",
-		"PULUMI_BACKEND_URL":       s.cfg.PulumiBackend,
-	}
+	env := s.getEnv()
 	dummySpec := providers.InstanceSpec{Name: s.stackName}
 	program := s.provider.GetPulumiProgram(dummySpec)
 
