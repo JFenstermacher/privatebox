@@ -2,13 +2,13 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"privatebox/internal/config"
 
 	"github.com/urfave/cli/v3"
+	"gopkg.in/yaml.v3"
 )
 
 // ConfigCommand returns the CLI command for managing configuration.
@@ -35,7 +35,7 @@ func ConfigCommand() *cli.Command {
 					fmt.Printf("Current Profile: %s\n", cfg.CurrentProfile)
 					fmt.Println("---")
 
-					data, _ := json.MarshalIndent(cfg, "", "  ")
+					data, _ := yaml.Marshal(cfg)
 					fmt.Println(string(data))
 					return nil
 				},
@@ -139,6 +139,18 @@ func ConfigCommand() *cli.Command {
 					loader, err := config.NewLoader()
 					if err != nil {
 						return err
+					}
+
+					// Ensure config exists (migrate from JSON if needed) before opening
+					path := loader.GetConfigPath()
+					if _, err := os.Stat(path); os.IsNotExist(err) {
+						cfg, err := loader.Load()
+						if err != nil {
+							return err
+						}
+						if err := loader.Save(cfg); err != nil {
+							return err
+						}
 					}
 
 					editor := os.Getenv("EDITOR")

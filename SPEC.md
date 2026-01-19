@@ -11,7 +11,7 @@ The tool will act as a wrapper around the Pulumi Automation API, embedding Infra
 ## 2. Architecture
 
 1.  **CLI Layer (`urfave/cli`)**: Parses user input.
-2.  **Config Manager**: Custom loader for `~/.config/privatebox/config.json`.
+2.  **Config Manager**: Custom loader for `~/.config/privatebox/config.yaml`.
 3.  **Orchestrator**: Sets up the Pulumi Stack (Local backend by default).
 4.  **Provider Interface**:
     *   Injects provider-specific resources (e.g., `ec2.NewInstance`) into the Pulumi context.
@@ -30,7 +30,7 @@ The tool will act as a wrapper around the Pulumi Automation API, embedding Infra
 │   │   ├── commands.go       # Command definitions (create, list, etc.)
 │   │   └── flags.go          # Global flags
 │   ├── config
-│   │   └── loader.go         # Custom JSON config logic
+│   │   └── loader.go         # Custom YAML config logic
 │   ├── orchestration
 │   │   └── stack.go          # Pulumi Automation API wrapper
 │   └── providers
@@ -45,24 +45,24 @@ The tool will act as a wrapper around the Pulumi Automation API, embedding Infra
 ## 4. Key Components & Interfaces
 
 ### A. Configuration (Custom)
-Location: `~/.config/privatebox/config.json`
+Location: `~/.config/privatebox/config.yaml`
 
 ```go
 package config
 
 type Config struct {
-    Provider      string `json:"provider"`       // "aws", "gcp", etc.
-    PulumiBackend string `json:"pulumi_backend"` // "file://~/.privatebox/state" or s3/url
-    Region        string `json:"region"`
-    SSHPublicKey  string `json:"ssh_public_key_path"`
+    Provider      string `yaml:"provider"`       // "aws", "gcp", etc.
+    PulumiBackend string `yaml:"pulumi_backend"` // "file://~/.privatebox/state" or s3/url
+    Region        string `yaml:"region"`
+    SSHPublicKey  string `yaml:"ssh_public_key_path"`
     // Provider specific generic map or structs
-    AWS           AWSConfig `json:"aws,omitempty"`
+    AWS           AWSConfig `yaml:"aws,omitempty"`
 }
 
 type AWSConfig struct {
-    Profile      string `json:"profile"`
-    InstanceType string `json:"instance_type"` // default: t3.micro
-    AMI          string `json:"ami"`           // optional override
+    Profile      string `yaml:"profile"`
+    InstanceType string `yaml:"instance_type"` // default: t3.micro
+    AMI          string `yaml:"ami"`           // optional override
 }
 ```
 

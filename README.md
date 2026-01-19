@@ -7,7 +7,7 @@ Privatebox is a CLI tool for managing remote cloud instances with a focus on pri
 *   **Cloud Agnostic Design**: Currently supports AWS, with architecture in place for GCP, Azure, and DigitalOcean.
 *   **Private by Default**: Uses a local backend (`file://`) for state management, keeping your infrastructure data on your machine.
 *   **Multi-Profile Support**: Manage multiple environments (e.g., dev, prod) with named configuration profiles.
-*   **Simple Configuration**: JSON-based configuration located at `~/.config/privatebox/config.json`.
+*   **Simple Configuration**: YAML-based configuration located at `~/.config/privatebox/config.yaml`.
 *   **Unified Interface**: Consistent `create`, `list`, `destroy`, `connect` commands regardless of the underlying provider.
 
 ## Installation
