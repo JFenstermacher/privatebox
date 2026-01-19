@@ -21,9 +21,19 @@ type Profile struct {
 
 // AWSConfig holds AWS-specific settings.
 type AWSConfig struct {
-	Profile      string `json:"profile" yaml:"profile"`
-	InstanceType string `json:"instance_type" yaml:"instance_type"` // default: t3.micro
-	AMI          string `json:"ami" yaml:"ami"`                     // optional override
+	Profile      string              `json:"profile" yaml:"profile"`
+	InstanceType string              `json:"instance_type" yaml:"instance_type"` // default: t3.micro
+	AMI          string              `json:"ami" yaml:"ami"`                     // optional override
+	IngressRules []SecurityGroupRule `json:"ingress_rules,omitempty" yaml:"ingress_rules,omitempty"`
+	EgressRules  []SecurityGroupRule `json:"egress_rules,omitempty" yaml:"egress_rules,omitempty"`
+}
+
+// SecurityGroupRule defines a firewall rule.
+type SecurityGroupRule struct {
+	Protocol   string   `json:"protocol" yaml:"protocol"`
+	FromPort   int      `json:"from_port" yaml:"from_port"`
+	ToPort     int      `json:"to_port" yaml:"to_port"`
+	CidrBlocks []string `json:"cidr_blocks" yaml:"cidr_blocks"`
 }
 
 // DefaultProfile returns a profile with sensible defaults.

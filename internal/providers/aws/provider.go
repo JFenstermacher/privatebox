@@ -101,24 +101,60 @@ func (p *Provider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFunc 
 		}
 
 		// 1. Create Security Group
+		// Prepare Ingress Rules
+		var ingressRules ec2.SecurityGroupIngressArray
+		if len(p.cfg.AWS.IngressRules) > 0 {
+			for _, rule := range p.cfg.AWS.IngressRules {
+				cidrs := pulumi.StringArray{}
+				for _, c := range rule.CidrBlocks {
+					cidrs = append(cidrs, pulumi.String(c))
+				}
+				ingressRules = append(ingressRules, &ec2.SecurityGroupIngressArgs{
+					Protocol:   pulumi.String(rule.Protocol),
+					FromPort:   pulumi.Int(rule.FromPort),
+					ToPort:     pulumi.Int(rule.ToPort),
+					CidrBlocks: cidrs,
+				})
+			}
+		} else {
+			// Default: Allow SSH from anywhere
+			ingressRules = append(ingressRules, &ec2.SecurityGroupIngressArgs{
+				Protocol:   pulumi.String("tcp"),
+				FromPort:   pulumi.Int(22),
+				ToPort:     pulumi.Int(22),
+				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			})
+		}
+
+		// Prepare Egress Rules
+		var egressRules ec2.SecurityGroupEgressArray
+		if len(p.cfg.AWS.EgressRules) > 0 {
+			for _, rule := range p.cfg.AWS.EgressRules {
+				cidrs := pulumi.StringArray{}
+				for _, c := range rule.CidrBlocks {
+					cidrs = append(cidrs, pulumi.String(c))
+				}
+				egressRules = append(egressRules, &ec2.SecurityGroupEgressArgs{
+					Protocol:   pulumi.String(rule.Protocol),
+					FromPort:   pulumi.Int(rule.FromPort),
+					ToPort:     pulumi.Int(rule.ToPort),
+					CidrBlocks: cidrs,
+				})
+			}
+		} else {
+			// Default: Allow all outbound
+			egressRules = append(egressRules, &ec2.SecurityGroupEgressArgs{
+				Protocol:   pulumi.String("-1"),
+				FromPort:   pulumi.Int(0),
+				ToPort:     pulumi.Int(0),
+				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+			})
+		}
+
 		sg, err := ec2.NewSecurityGroup(ctx, spec.Name+"-sg", &ec2.SecurityGroupArgs{
-			Description: pulumi.String("Allow SSH"),
-			Ingress: ec2.SecurityGroupIngressArray{
-				&ec2.SecurityGroupIngressArgs{
-					Protocol:   pulumi.String("tcp"),
-					FromPort:   pulumi.Int(22),
-					ToPort:     pulumi.Int(22),
-					CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-				},
-			},
-			Egress: ec2.SecurityGroupEgressArray{
-				&ec2.SecurityGroupEgressArgs{
-					Protocol:   pulumi.String("-1"),
-					FromPort:   pulumi.Int(0),
-					ToPort:     pulumi.Int(0),
-					CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
-				},
-			},
+			Description: pulumi.String("Security Group for " + spec.Name),
+			Ingress:     ingressRules,
+			Egress:      egressRules,
 			Tags: pulumi.StringMap{
 				"Name": pulumi.String(spec.Name + "-sg"),
 			},
