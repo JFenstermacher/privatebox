@@ -6,6 +6,7 @@ Privatebox is a CLI tool for managing remote cloud instances with a focus on pri
 
 *   **Cloud Agnostic Design**: Currently supports AWS, with architecture in place for GCP, Azure, and DigitalOcean.
 *   **Private by Default**: Uses a local backend (`file://`) for state management, keeping your infrastructure data on your machine.
+*   **Multi-Profile Support**: Manage multiple environments (e.g., dev, prod) with named configuration profiles.
 *   **Simple Configuration**: JSON-based configuration located at `~/.config/privatebox/config.json`.
 *   **Unified Interface**: Consistent `create`, `list`, `destroy`, `ssh` commands regardless of the underlying provider.
 
@@ -20,15 +21,29 @@ mv privatebox /usr/local/bin/ # Optional
 
 ## Usage
 
-### 1. Initialize Configuration
+### 1. Configuration Management
 
-Initialize the default configuration file:
+Privatebox supports multiple named configuration profiles.
 
+**Initialize:**
 ```bash
 privatebox config init
 ```
 
-This creates `~/.config/privatebox/config.json`. You can edit this file to set your default region, instance type, and SSH key path.
+**Manage Profiles:**
+```bash
+# List all profiles
+privatebox config list
+
+# Create a new profile (clones default defaults)
+privatebox config new dev
+
+# Switch default profile
+privatebox config use dev
+
+# Edit configuration (opens $EDITOR)
+privatebox config edit
+```
 
 ### 2. Configure AWS Credentials
 
@@ -39,11 +54,14 @@ Ensure you have standard AWS credentials set up (environment variables `AWS_ACCE
 **Create an instance:**
 
 ```bash
-# Create a default instance (t3.micro, Ubuntu 22.04)
+# Create using the current default profile
 privatebox instance create my-dev-box
 
-# Create with specific type and user-data script
-privatebox instance create --type t3.medium --user-data ./setup.sh my-app-server
+# Create using a specific profile (e.g., prod)
+privatebox instance create --profile prod --type t3.medium my-app-server
+
+# Create with user-data script
+privatebox instance create --user-data ./setup.sh my-worker
 ```
 
 **List instance details:**

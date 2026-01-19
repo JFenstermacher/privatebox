@@ -2,7 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"privatebox/internal/config"
 
 	"github.com/urfave/cli/v3"
@@ -29,25 +32,11 @@ func ConfigCommand() *cli.Command {
 					}
 
 					fmt.Printf("Config File: %s\n", loader.GetConfigPath())
+					fmt.Printf("Current Profile: %s\n", cfg.CurrentProfile)
 					fmt.Println("---")
 
-					// Re-marshal to show pretty JSON
-					if err := loader.Save(cfg); err != nil {
-						// If save fails (permissions?), just dump struct
-						fmt.Printf("%+v\n", cfg)
-					} else {
-						// Read it back to print raw json or just print manual
-						// A simple way is to use the save logic to print to stdout
-						// But for now let's just use the file content or reconstruct
-						// reusing Save logic printed to stdout:
-						importConfig, _ := config.NewLoader()
-						cfg, _ := importConfig.Load()
-						// This is a bit circular, let's just print the struct fields for now for simplicity in this step
-						fmt.Printf("Provider: %s\n", cfg.Provider)
-						fmt.Printf("Region: %s\n", cfg.Region)
-						fmt.Printf("Pulumi Backend: %s\n", cfg.PulumiBackend)
-						fmt.Printf("AWS Instance Type: %s\n", cfg.AWS.InstanceType)
-					}
+					data, _ := json.MarshalIndent(cfg, "", "  ")
+					fmt.Println(string(data))
 					return nil
 				},
 			},
@@ -60,13 +49,121 @@ func ConfigCommand() *cli.Command {
 						return err
 					}
 
-					cfg := config.DefaultConfig()
+					cfg := config.NewAppConfig()
 					if err := loader.Save(&cfg); err != nil {
 						return err
 					}
 
 					fmt.Printf("Initialized default config at %s\n", loader.GetConfigPath())
 					return nil
+				},
+			},
+			{
+				Name:  "list",
+				Usage: "List all profiles",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					loader, err := config.NewLoader()
+					if err != nil {
+						return err
+					}
+					cfg, err := loader.Load()
+					if err != nil {
+						return err
+					}
+
+					for name := range cfg.Profiles {
+						prefix := " "
+						if name == cfg.CurrentProfile {
+							prefix = "*"
+						}
+						fmt.Printf("%s %s\n", prefix, name)
+					}
+					return nil
+				},
+			},
+			{
+				Name:      "use",
+				Usage:     "Switch current profile",
+				ArgsUsage: "<profile-name>",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					name := cmd.Args().First()
+					if name == "" {
+						return fmt.Errorf("profile name required")
+					}
+
+					loader, err := config.NewLoader()
+					if err != nil {
+						return err
+					}
+					cfg, err := loader.Load()
+					if err != nil {
+						return err
+					}
+
+					if _, ok := cfg.Profiles[name]; !ok {
+						return fmt.Errorf("profile '%s' does not exist", name)
+					}
+
+					cfg.CurrentProfile = name
+					if err := loader.Save(cfg); err != nil {
+						return err
+					}
+					fmt.Printf("Switched to profile '%s'\n", name)
+					return nil
+				},
+			},
+			{
+				Name:      "new",
+				Usage:     "Create a new profile (clones default)",
+				ArgsUsage: "<profile-name>",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					name := cmd.Args().First()
+					if name == "" {
+						return fmt.Errorf("profile name required")
+					}
+
+					loader, err := config.NewLoader()
+					if err != nil {
+						return err
+					}
+					cfg, err := loader.Load()
+					if err != nil {
+						return err
+					}
+
+					if _, ok := cfg.Profiles[name]; ok {
+						return fmt.Errorf("profile '%s' already exists", name)
+					}
+
+					// Clone default or create new default
+					cfg.Profiles[name] = config.DefaultProfile()
+
+					if err := loader.Save(cfg); err != nil {
+						return err
+					}
+					fmt.Printf("Created profile '%s'\n", name)
+					return nil
+				},
+			},
+			{
+				Name:  "edit",
+				Usage: "Open config file in editor",
+				Action: func(ctx context.Context, cmd *cli.Command) error {
+					loader, err := config.NewLoader()
+					if err != nil {
+						return err
+					}
+
+					editor := os.Getenv("EDITOR")
+					if editor == "" {
+						editor = "vi"
+					}
+
+					c := exec.Command(editor, loader.GetConfigPath())
+					c.Stdin = os.Stdin
+					c.Stdout = os.Stdout
+					c.Stderr = os.Stderr
+					return c.Run()
 				},
 			},
 		},

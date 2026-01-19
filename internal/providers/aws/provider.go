@@ -20,10 +20,10 @@ import (
 )
 
 type AWSProvider struct {
-	cfg config.Config
+	cfg config.Profile
 }
 
-func NewAWSProvider(cfg config.Config) *AWSProvider {
+func NewAWSProvider(cfg config.Profile) *AWSProvider {
 	return &AWSProvider{cfg: cfg}
 }
 

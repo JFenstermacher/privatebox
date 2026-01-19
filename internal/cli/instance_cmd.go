@@ -15,6 +15,8 @@ import (
 
 // InstanceCommands returns the CLI commands for managing instances.
 func InstanceCommands() *cli.Command {
+	profileFlag := &cli.StringFlag{Name: "profile", Usage: "Configuration profile to use"}
+
 	return &cli.Command{
 		Name:  "instance",
 		Usage: "Manage remote instances",
@@ -26,6 +28,7 @@ func InstanceCommands() *cli.Command {
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "type", Usage: "Instance type (e.g. t3.small)"},
 					&cli.StringFlag{Name: "user-data", Usage: "Path to user-data script"},
+					profileFlag,
 				},
 				Action: createInstance,
 			},
@@ -33,45 +36,63 @@ func InstanceCommands() *cli.Command {
 				Name:      "destroy",
 				Usage:     "Destroy an instance",
 				ArgsUsage: "<name>",
+				Flags:     []cli.Flag{profileFlag},
 				Action:    destroyInstance,
 			},
 			{
 				Name:      "list",
 				Usage:     "List info about an instance",
 				ArgsUsage: "<name>",
+				Flags:     []cli.Flag{profileFlag},
 				Action:    listInstance,
 			},
 			{
 				Name:      "ssh",
 				Usage:     "SSH into an instance",
 				ArgsUsage: "<name>",
+				Flags:     []cli.Flag{profileFlag},
 				Action:    sshInstance,
 			},
 		},
 	}
 }
 
-func getStackManager(instanceName string) (*orchestration.StackManager, *config.Config, providers.CloudProvider, error) {
+func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.StackManager, *config.Profile, providers.CloudProvider, error) {
 	loader, err := config.NewLoader()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	cfg, err := loader.Load()
+	appCfg, err := loader.Load()
 	if err != nil {
 		return nil, nil, nil, err
 	}
 
-	// Provider Factory (Switch based on cfg.Provider in future)
-	var provider providers.CloudProvider
-	if cfg.Provider == "aws" {
-		provider = aws.NewAWSProvider(*cfg)
-	} else {
-		return nil, nil, nil, fmt.Errorf("unsupported provider: %s", cfg.Provider)
+	// Determine profile
+	profileName := cmd.String("profile")
+	if profileName == "" {
+		profileName = appCfg.CurrentProfile
+	}
+	if profileName == "" {
+		profileName = "default"
 	}
 
-	mgr := orchestration.NewStackManager(cfg, provider, instanceName)
-	return mgr, cfg, provider, nil
+	profile, ok := appCfg.Profiles[profileName]
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("profile '%s' not found", profileName)
+	}
+
+	// Provider Factory (Switch based on cfg.Provider in future)
+	var provider providers.CloudProvider
+	if profile.Provider == "aws" {
+		provider = aws.NewAWSProvider(profile)
+	} else {
+		return nil, nil, nil, fmt.Errorf("unsupported provider: %s", profile.Provider)
+	}
+
+	// Pass pointer to profile
+	mgr := orchestration.NewStackManager(&profile, provider, instanceName)
+	return mgr, &profile, provider, nil
 }
 
 func createInstance(ctx context.Context, cmd *cli.Command) error {
@@ -80,7 +101,7 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("instance name is required")
 	}
 
-	mgr, cfg, _, err := getStackManager(name)
+	mgr, cfg, _, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}
@@ -122,7 +143,7 @@ func destroyInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("instance name is required")
 	}
 
-	mgr, _, _, err := getStackManager(name)
+	mgr, _, _, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}
@@ -142,7 +163,7 @@ func listInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("instance name is required")
 	}
 
-	mgr, _, provider, err := getStackManager(name)
+	mgr, _, provider, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}
@@ -179,7 +200,7 @@ func sshInstance(ctx context.Context, cmd *cli.Command) error {
 		return fmt.Errorf("instance name is required")
 	}
 
-	mgr, cfg, provider, err := getStackManager(name)
+	mgr, cfg, provider, err := getStackManager(cmd, name)
 	if err != nil {
 		return err
 	}

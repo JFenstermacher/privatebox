@@ -16,12 +16,12 @@ import (
 type StackManager struct {
 	stackName string
 	project   string
-	cfg       *config.Config
+	cfg       *config.Profile
 	provider  providers.CloudProvider
 }
 
 // NewStackManager creates a new stack manager.
-func NewStackManager(cfg *config.Config, provider providers.CloudProvider, instanceName string) *StackManager {
+func NewStackManager(cfg *config.Profile, provider providers.CloudProvider, instanceName string) *StackManager {
 	return &StackManager{
 		stackName: instanceName,
 		project:   "privatebox",
