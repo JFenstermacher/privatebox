@@ -36,12 +36,10 @@ func DefaultProfile() Profile {
 	}
 }
 
-// NewAppConfig creates a new AppConfig with a default profile.
+// NewAppConfig creates a new AppConfig with no profiles.
 func NewAppConfig() AppConfig {
 	return AppConfig{
-		CurrentProfile: "default",
-		Profiles: map[string]Profile{
-			"default": DefaultProfile(),
-		},
+		CurrentProfile: "",
+		Profiles:       make(map[string]Profile),
 	}
 }

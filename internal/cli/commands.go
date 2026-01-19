@@ -41,24 +41,6 @@ func ConfigCommand() *cli.Command {
 				},
 			},
 			{
-				Name:  "init",
-				Usage: "Initialize default configuration",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
-					loader, err := config.NewLoader()
-					if err != nil {
-						return err
-					}
-
-					cfg := config.NewAppConfig()
-					if err := loader.Save(&cfg); err != nil {
-						return err
-					}
-
-					fmt.Printf("Initialized default config at %s\n", loader.GetConfigPath())
-					return nil
-				},
-			},
-			{
 				Name:  "list",
 				Usage: "List all profiles",
 				Action: func(ctx context.Context, cmd *cli.Command) error {
@@ -137,6 +119,11 @@ func ConfigCommand() *cli.Command {
 
 					// Clone default or create new default
 					cfg.Profiles[name] = config.DefaultProfile()
+
+					// If this is the first profile, set it as current
+					if cfg.CurrentProfile == "" {
+						cfg.CurrentProfile = name
+					}
 
 					if err := loader.Save(cfg); err != nil {
 						return err

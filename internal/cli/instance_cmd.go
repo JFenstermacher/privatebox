@@ -68,13 +68,17 @@ func loadProfile(cmd *cli.Command) (*config.Profile, error) {
 		return nil, err
 	}
 
+	if len(appCfg.Profiles) == 0 {
+		return nil, fmt.Errorf("no configuration profiles found. Run 'privatebox config new <name>' to start")
+	}
+
 	// Determine profile
 	profileName := cmd.String("profile")
 	if profileName == "" {
 		profileName = appCfg.CurrentProfile
 	}
 	if profileName == "" {
-		profileName = "default"
+		return nil, fmt.Errorf("no current profile set")
 	}
 
 	profile, ok := appCfg.Profiles[profileName]
