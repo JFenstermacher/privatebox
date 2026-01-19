@@ -30,6 +30,23 @@ func TestLoader_Save(t *testing.T) {
 			},
 			wantErr: false,
 		},
+		{
+			name: "Config With Env",
+			cfg: &AppConfig{
+				CurrentProfile: "dev",
+				Profiles: map[string]Profile{
+					"dev": {
+						Provider: "aws",
+						Region:   "us-west-1",
+						Env: map[string]string{
+							"FOO": "bar",
+							"BAZ": "qux",
+						},
+					},
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -57,6 +74,27 @@ func TestLoader_Save(t *testing.T) {
 
 				if loadedCfg.CurrentProfile != tc.cfg.CurrentProfile {
 					t.Errorf("Config mismatch. Got %s, want %s", loadedCfg.CurrentProfile, tc.cfg.CurrentProfile)
+				}
+
+				// Check profiles
+				if len(loadedCfg.Profiles) != len(tc.cfg.Profiles) {
+					t.Errorf("Profile count mismatch. Got %d, want %d", len(loadedCfg.Profiles), len(tc.cfg.Profiles))
+				}
+
+				for name, p := range tc.cfg.Profiles {
+					loadedP, ok := loadedCfg.Profiles[name]
+					if !ok {
+						t.Errorf("Profile %s missing", name)
+						continue
+					}
+					if len(p.Env) != len(loadedP.Env) {
+						t.Errorf("Profile %s Env count mismatch. Got %d, want %d", name, len(loadedP.Env), len(p.Env))
+					}
+					for k, v := range p.Env {
+						if loadedP.Env[k] != v {
+							t.Errorf("Profile %s Env mismatch for key %s. Got %s, want %s", name, k, loadedP.Env[k], v)
+						}
+					}
 				}
 			}
 		})

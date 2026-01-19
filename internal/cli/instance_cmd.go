@@ -51,8 +51,10 @@ func GetRootCommands() []*cli.Command {
 			Name:      "connect",
 			Usage:     "Connect (SSH) to an instance",
 			ArgsUsage: "[name]",
-			Flags:     []cli.Flag{profileFlag},
-			Action:    connectInstance,
+			Flags: []cli.Flag{
+				profileFlag,
+			},
+			Action: connectInstance,
 		},
 	}
 }
@@ -321,6 +323,21 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
 	sshCmd.Stderr = os.Stderr
+
+	// Prepare environment variables
+	env := os.Environ()
+
+	// 1. AWS Profile from config
+	if cfg.AWS.Profile != "" {
+		env = append(env, fmt.Sprintf("AWS_PROFILE=%s", cfg.AWS.Profile))
+	}
+
+	// 2. Custom environment variables from profile
+	for k, v := range cfg.Env {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	sshCmd.Env = env
 
 	return sshCmd.Run()
 }

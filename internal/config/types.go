@@ -4,16 +4,18 @@ package config
 type AppConfig struct {
 	CurrentProfile string             `json:"current_profile" yaml:"current_profile"`
 	Profiles       map[string]Profile `json:"profiles" yaml:"profiles"`
+	UserData       map[string]string  `json:"user_data" yaml:"user_data"`
 }
 
 // Profile represents a specific configuration set.
 type Profile struct {
-	Provider       string    `json:"provider" yaml:"provider"`                       // "aws", "gcp", etc.
-	PulumiBackend  string    `json:"pulumi_backend" yaml:"pulumi_backend"`           // "file://~/.privatebox/state" or s3/url
-	Region         string    `json:"region" yaml:"region"`                           // Global default region
-	SSHPublicKey   string    `json:"ssh_public_key_path" yaml:"ssh_public_key_path"` // Path to public key for instances
-	ConnectCommand string    `json:"connect_command" yaml:"connect_command"`         // Command template to connect (e.g. "ssh {user}@{ip}", "mosh ...")
-	AWS            AWSConfig `json:"aws,omitempty" yaml:"aws,omitempty"`             // AWS specific config
+	Provider       string            `json:"provider" yaml:"provider"`                       // "aws", "gcp", etc.
+	PulumiBackend  string            `json:"pulumi_backend" yaml:"pulumi_backend"`           // "file://~/.privatebox/state" or s3/url
+	Region         string            `json:"region" yaml:"region"`                           // Global default region
+	SSHPublicKey   string            `json:"ssh_public_key_path" yaml:"ssh_public_key_path"` // Path to public key for instances
+	ConnectCommand string            `json:"connect_command" yaml:"connect_command"`         // Command template to connect (e.g. "ssh {user}@{ip}", "mosh ...")
+	Env            map[string]string `json:"env,omitempty" yaml:"env,omitempty"`             // Extra environment variables
+	AWS            AWSConfig         `json:"aws,omitempty" yaml:"aws,omitempty"`             // AWS specific config
 }
 
 // AWSConfig holds AWS-specific settings.
@@ -41,5 +43,6 @@ func NewAppConfig() AppConfig {
 	return AppConfig{
 		CurrentProfile: "",
 		Profiles:       make(map[string]Profile),
+		UserData:       make(map[string]string),
 	}
 }
