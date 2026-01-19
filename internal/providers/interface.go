@@ -1,3 +1,4 @@
+// Package providers defines the interface for cloud providers.
 package providers
 
 import (

@@ -8,17 +8,13 @@ linters:
   default: none
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - typecheck
     - unused
     - gosec
     - goconst
     - gocyclo
-    - gofmt
-    - goimports
     - misspell
     - revive
     - whitespace

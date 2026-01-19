@@ -1,3 +1,4 @@
+// Package config handles configuration loading and saving.
 package config
 
 // AppConfig represents the top-level configuration file structure.

@@ -17,6 +17,8 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+const providerAWS = "aws"
+
 // GetRootCommands returns the root-level CLI commands for managing instances.
 func GetRootCommands() []*cli.Command {
 	profileFlag := &cli.StringFlag{Name: "profile", Usage: "Configuration profile to use"}
@@ -113,8 +115,8 @@ func getStackManager(cmd *cli.Command, instanceName string) (*orchestration.Stac
 
 	// Provider Factory (Switch based on cfg.Provider in future)
 	var provider providers.CloudProvider
-	if profile.Provider == "aws" {
-		provider = aws.NewAWSProvider(*profile)
+	if profile.Provider == providerAWS {
+		provider = aws.New(*profile)
 	} else {
 		return nil, nil, "", nil, fmt.Errorf("unsupported provider: %s", profile.Provider)
 	}
@@ -141,6 +143,7 @@ func createInstance(ctx context.Context, cmd *cli.Command) error {
 
 	if userDataArg != "" {
 		// Assume file path
+		//nolint:gosec // User provided path is intended
 		data, err := os.ReadFile(userDataArg)
 		if err != nil {
 			return fmt.Errorf("failed to read user-data file: %w", err)
@@ -228,8 +231,8 @@ func listInstance(ctx context.Context, cmd *cli.Command) error {
 	for _, instName := range instances {
 		// Create provider
 		var provider providers.CloudProvider
-		if profile.Provider == "aws" {
-			provider = aws.NewAWSProvider(*profile)
+		if profile.Provider == providerAWS {
+			provider = aws.New(*profile)
 		} else {
 			fmt.Fprintf(os.Stderr, "Skipping %s: unsupported provider %s\n", instName, profile.Provider)
 			continue
@@ -253,7 +256,7 @@ func listInstance(ctx context.Context, cmd *cli.Command) error {
 			profileName = "Unknown"
 		}
 
-		state := "Unknown"
+		var state string
 		if id != "" {
 			status, err := provider.GetInstanceStatus(ctx, id)
 			if err == nil {
@@ -302,9 +305,7 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	privKeyPath := ""
 	if cfg.SSHPublicKey != "" {
 		privKeyPath = cfg.SSHPublicKey
-		if strings.HasSuffix(privKeyPath, ".pub") {
-			privKeyPath = strings.TrimSuffix(privKeyPath, ".pub")
-		}
+		privKeyPath = strings.TrimSuffix(privKeyPath, ".pub")
 	}
 
 	// Determine Command Template
@@ -329,6 +330,7 @@ func connectInstance(ctx context.Context, cmd *cli.Command) error {
 	fmt.Printf("Command: %s\n", commandStr)
 
 	// Use sh -c to allow for complex commands (pipes, etc) and correct argument parsing by shell
+	//nolint:gosec // Command string is constructed from user config and is intended to be executed
 	sshCmd := exec.Command("sh", "-c", commandStr)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
@@ -428,7 +430,7 @@ func selectInstance(ctx context.Context, cmd *cli.Command, filterState string) (
 		if filterState != "" {
 			msg += fmt.Sprintf(" with state '%s'", filterState)
 		}
-		return "", fmt.Errorf(msg)
+		return "", fmt.Errorf("%s", msg)
 	} else if len(candidates) == 1 {
 		name = candidates[0]
 		fmt.Printf("Selected '%s'\n", name)
@@ -487,7 +489,7 @@ func getInstancesWithState(ctx context.Context, cmd *cli.Command, desiredState s
 			// We need a provider for each stack
 			var provider providers.CloudProvider
 			if profile.Provider == "aws" {
-				provider = aws.NewAWSProvider(*profile)
+				provider = aws.New(*profile)
 			} else {
 				return
 			}

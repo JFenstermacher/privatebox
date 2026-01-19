@@ -1,3 +1,4 @@
+// Package aws implements the AWS cloud provider.
 package aws
 
 import (
@@ -22,19 +23,23 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
-type AWSProvider struct {
+// Provider implements the CloudProvider interface for AWS.
+type Provider struct {
 	cfg config.Profile
 }
 
-func NewAWSProvider(cfg config.Profile) *AWSProvider {
-	return &AWSProvider{cfg: cfg}
+// New creates a new AWS provider with the given configuration.
+func New(cfg config.Profile) *Provider {
+	return &Provider{cfg: cfg}
 }
 
-func (p *AWSProvider) Name() string {
+// Name returns the provider name.
+func (p *Provider) Name() string {
 	return "aws"
 }
 
-func (p *AWSProvider) GetSSHUser() string {
+// GetSSHUser returns the default SSH user for the instance.
+func (p *Provider) GetSSHUser() string {
 	// For Amazon Linux 2 or Ubuntu, it varies.
 	// We'll default to "ubuntu" for now as we'll use Ubuntu AMIs by default,
 	// or "ec2-user" for Amazon Linux.
@@ -42,7 +47,8 @@ func (p *AWSProvider) GetSSHUser() string {
 	return "ubuntu"
 }
 
-func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFunc {
+// GetPulumiProgram returns the Pulumi program to infrastructure.
+func (p *Provider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFunc {
 	return func(ctx *pulumi.Context) error {
 		// 0. Get Caller Identity to secure KMS key
 		caller, err := pulumiaws.GetCallerIdentity(ctx, nil)
@@ -258,11 +264,10 @@ func (p *AWSProvider) GetPulumiProgram(spec providers.InstanceSpec) pulumi.RunFu
 			ctx.Export("userDataName", pulumi.String(""))
 		}
 		return nil
-
 	}
 }
 
-func (p *AWSProvider) readPublicKey(path string) (string, error) {
+func (p *Provider) readPublicKey(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("ssh public key path is empty")
 	}
@@ -273,7 +278,7 @@ func (p *AWSProvider) readPublicKey(path string) (string, error) {
 		path = filepath.Join(dirname, path[2:])
 	}
 
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(filepath.Clean(path))
 	if err != nil {
 		return "", err
 	}
@@ -281,7 +286,7 @@ func (p *AWSProvider) readPublicKey(path string) (string, error) {
 }
 
 // GetInstanceStatus uses AWS SDK to fetch real-time info
-func (p *AWSProvider) GetInstanceStatus(ctx context.Context, instanceID string) (*providers.RuntimeInfo, error) {
+func (p *Provider) GetInstanceStatus(ctx context.Context, instanceID string) (*providers.RuntimeInfo, error) {
 	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(p.cfg.Region))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load aws config: %w", err)
@@ -320,7 +325,7 @@ func (p *AWSProvider) GetInstanceStatus(ctx context.Context, instanceID string) 
 // getPrincipalARN normalizes the caller ARN.
 // If it is an assumed-role ARN (STS), it converts it to the underlying IAM Role ARN.
 // This ensures the policy remains valid even after the session expires.
-func (p *AWSProvider) getPrincipalARN(arn string) string {
+func (p *Provider) getPrincipalARN(arn string) string {
 	if strings.Contains(arn, ":sts:") && strings.Contains(arn, ":assumed-role/") {
 		// Convert arn:aws:sts::account:assumed-role/role-name/session-name
 		// to      arn:aws:iam::account:role/role-name
@@ -334,7 +339,8 @@ func (p *AWSProvider) getPrincipalARN(arn string) string {
 	return arn
 }
 
-func (p *AWSProvider) StartInstance(ctx context.Context, instanceID string) error {
+// StartInstance starts the instance.
+func (p *Provider) StartInstance(ctx context.Context, instanceID string) error {
 	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(p.cfg.Region))
 	if err != nil {
 		return fmt.Errorf("failed to load aws config: %w", err)
@@ -347,7 +353,8 @@ func (p *AWSProvider) StartInstance(ctx context.Context, instanceID string) erro
 	return err
 }
 
-func (p *AWSProvider) StopInstance(ctx context.Context, instanceID string) error {
+// StopInstance stops the instance.
+func (p *Provider) StopInstance(ctx context.Context, instanceID string) error {
 	cfg, err := awscfg.LoadDefaultConfig(ctx, awscfg.WithRegion(p.cfg.Region))
 	if err != nil {
 		return fmt.Errorf("failed to load aws config: %w", err)

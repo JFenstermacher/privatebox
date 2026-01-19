@@ -1,3 +1,4 @@
+// Package cli implements the command-line interface.
 package cli
 
 import (
@@ -20,7 +21,7 @@ func ConfigCommand() *cli.Command {
 			{
 				Name:  "show",
 				Usage: "Display current configuration",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
+				Action: func(_ context.Context, _ *cli.Command) error {
 					loader, err := config.NewLoader()
 					if err != nil {
 						return err
@@ -44,7 +45,7 @@ func ConfigCommand() *cli.Command {
 				Name:    "list",
 				Aliases: []string{"ls"},
 				Usage:   "List all profiles",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
+				Action: func(_ context.Context, _ *cli.Command) error {
 					loader, err := config.NewLoader()
 					if err != nil {
 						return err
@@ -68,7 +69,7 @@ func ConfigCommand() *cli.Command {
 				Name:      "use",
 				Usage:     "Switch current profile",
 				ArgsUsage: "<profile-name>",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
+				Action: func(_ context.Context, cmd *cli.Command) error {
 					name := cmd.Args().First()
 					if name == "" {
 						return fmt.Errorf("profile name required")
@@ -99,7 +100,7 @@ func ConfigCommand() *cli.Command {
 				Name:      "new",
 				Usage:     "Create a new profile (clones default)",
 				ArgsUsage: "<profile-name>",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
+				Action: func(_ context.Context, cmd *cli.Command) error {
 					name := cmd.Args().First()
 					if name == "" {
 						return fmt.Errorf("profile name required")
@@ -136,7 +137,7 @@ func ConfigCommand() *cli.Command {
 			{
 				Name:  "edit",
 				Usage: "Open config file in editor",
-				Action: func(ctx context.Context, cmd *cli.Command) error {
+				Action: func(_ context.Context, _ *cli.Command) error {
 					loader, err := config.NewLoader()
 					if err != nil {
 						return err
@@ -159,6 +160,7 @@ func ConfigCommand() *cli.Command {
 						editor = "vi"
 					}
 
+					//nolint:gosec // Intentionally running user-defined editor
 					c := exec.Command(editor, loader.GetConfigPath())
 					c.Stdin = os.Stdin
 					c.Stdout = os.Stdout

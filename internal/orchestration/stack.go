@@ -1,3 +1,4 @@
+// Package orchestration handles Pulumi stack operations.
 package orchestration
 
 import (

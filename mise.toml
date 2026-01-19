@@ -9,6 +9,7 @@ run = "go fmt ./..."
 [tasks.lint]
 description = "Lint Go code"
 run = "golangci-lint run"
+env = { GOFLAGS = "-buildvcs=false" }
 
 [tasks.test]
 description = "Run tests"

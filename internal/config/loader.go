@@ -1,3 +1,4 @@
+// Package config handles configuration loading and saving.
 package config
 
 import (
@@ -68,11 +69,11 @@ func (l *Loader) Save(cfg *AppConfig) error {
 	}
 
 	dir := filepath.Dir(l.configPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	if err := os.WriteFile(l.configPath, data, 0644); err != nil {
+	if err := os.WriteFile(l.configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 

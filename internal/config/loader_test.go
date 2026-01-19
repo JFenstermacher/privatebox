@@ -1,3 +1,4 @@
+// Package config handles configuration loading and saving.
 package config
 
 import (
@@ -61,6 +62,7 @@ func TestLoader_Save(t *testing.T) {
 
 			if !tc.wantErr {
 				// Verify file exists and is valid YAML
+				//nolint:gosec // Test file read
 				content, err := os.ReadFile(configPath)
 				if err != nil {
 					t.Fatalf("Failed to read saved file: %v", err)
@@ -143,7 +145,7 @@ func TestLoader_Load(t *testing.T) {
 
 			for _, f := range tc.files {
 				path := filepath.Join(tmpDir, f.name)
-				if err := os.WriteFile(path, f.content, 0644); err != nil {
+				if err := os.WriteFile(path, f.content, 0600); err != nil {
 					t.Fatalf("Failed to write setup file %s: %v", f.name, err)
 				}
 			}
